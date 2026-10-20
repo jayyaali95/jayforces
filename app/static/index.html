@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>pitstop</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='4' fill='%231a1b26'/><rect x='3' y='10' width='10' height='2.5' rx='1.2' fill='%237aa2f7'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="/" aria-label="pitstop home">pitstop</a>
+    <nav class="laps" id="laps" aria-label="Contest questions"></nav>
+    <div class="bar-right">
+      <span class="clock" id="clock" hidden></span>
+      <button class="ghost" id="end-btn" hidden>End contest</button>
+      <button class="primary" id="new-btn">Generate contest</button>
+    </div>
+  </header>
+  <div class="fuel" aria-hidden="true"><div id="fuel"></div></div>
+
+  <main class="split" id="split">
+    <section class="pane statement" id="left" aria-live="polite"></section>
+    <div class="gutter v" id="gutter-v" role="separator" aria-orientation="vertical" tabindex="0"></div>
+    <section class="pane work" id="right">
+      <div class="editor" id="editor"></div>
+      <div class="gutter h" id="gutter-h" role="separator" aria-orientation="horizontal" tabindex="0"></div>
+      <div class="console">
+        <div class="console-head">
+          <div class="score" id="score">Run the tests to see how you're doing.</div>
+          <div class="actions">
+            <button class="ghost" id="reset-btn">Reset code</button>
+            <button class="primary" id="run-btn">Run tests <kbd>Ctrl ↵</kbd></button>
+          </div>
+        </div>
+        <div class="results" id="results"></div>
+      </div>
+    </section>
+    <section class="pane empty" id="empty" hidden></section>
+  </main>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+  <dialog id="modal"></dialog>
+
+  <script src="/marked.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

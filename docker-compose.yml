@@ -1,0 +1,11 @@
+services:
+  pitstop:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/pitstop/data            # sqlite history lives here, survives rebuilds
+      - ./questions:/pitstop/questions  # edit or add questions without rebuilding
+    environment:
+      CONTEST_MINUTES: "90"
+    restart: unless-stopped
