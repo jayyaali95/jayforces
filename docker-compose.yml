@@ -1,0 +1,11 @@
+services:
+  jayforces:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/jayforces/data            # sqlite history lives here, survives rebuilds
+      - ./questions:/jayforces/questions  # edit or add questions without rebuilding
+    environment:
+      CONTEST_MINUTES: "90"
+    restart: unless-stopped
