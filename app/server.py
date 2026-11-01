@@ -26,7 +26,8 @@ LINEUP = ["easy", "medium", "medium", "hard"]
 
 SCHEMA = """
 create table if not exists contests (
-    id integer primary key, started_at real, ends_at real, ended_at real);
+    id integer primary key, started_at real, ends_at real, ended_at real,
+    paused_at real, paused_total real not null default 0);
 create table if not exists attempts (
     contest_id integer, idx integer, slug text, code text,
     part integer default 1, best real default 0, runs integer default 0, solved_at real,
@@ -66,7 +67,7 @@ def pick_lineup(con, bank):
 
 
 def close_expired(con):
-    con.execute("update contests set ended_at = ends_at where ended_at is null and ends_at < ?", (time.time(),))
+    con.execute("update contests set ended_at = ends_at where ended_at is null and paused_at is null and ends_at <= ?", (time.time(),))
     con.commit()
 
 
@@ -83,7 +84,9 @@ def view(con, cid, bank):
         unlocked = unlocked and a["solved_at"] is not None
     score = round(sum(q["best"] for q in qs) / max(len(qs), 1), 1)
     return {"id": c["id"], "started_at": c["started_at"], "ends_at": c["ends_at"],
-            "ended_at": c["ended_at"], "active": c["ended_at"] is None, "score": score,
+            "ended_at": c["ended_at"], "paused_at": c["paused_at"],
+            "duration": c["ends_at"] - c["started_at"] - c["paused_total"],
+            "active": c["ended_at"] is None, "score": score,
             "questions": qs, "now": time.time()}
 
 
@@ -144,6 +147,25 @@ def r_end(con, bank, body, cid):
     return view(con, int(cid), bank)
 
 
+def r_pause(con, bank, body, cid):
+    close_expired(con)
+    con.execute("update contests set paused_at = ? where id = ? and ended_at is null and paused_at is null",
+                (time.time(), int(cid)))
+    con.commit()
+    return view(con, int(cid), bank)
+
+
+def r_resume(con, bank, body, cid):
+    close_expired(con)
+    now = time.time()
+    con.execute("update contests set ends_at = ends_at + (? - paused_at), "
+                "paused_total = paused_total + (? - paused_at), paused_at = null "
+                "where id = ? and ended_at is null and paused_at is not null",
+                (now, now, int(cid)))
+    con.commit()
+    return view(con, int(cid), bank)
+
+
 def r_question(con, bank, body, cid, idx):
     v, a, q = attempt(con, int(cid), int(idx), bank)
     shown = q.parts[:a["part"]]
@@ -198,6 +220,8 @@ ROUTES = [
     ("POST", r"/api/contests", r_new),
     ("GET", r"/api/history", r_history),
     ("POST", r"/api/contests/(\d+)/end", r_end),
+    ("POST", r"/api/contests/(\d+)/pause", r_pause),
+    ("POST", r"/api/contests/(\d+)/resume", r_resume),
     ("GET", r"/api/contests/(\d+)/q/(\d+)", r_question),
     ("PUT", r"/api/contests/(\d+)/q/(\d+)/code", r_save),
     ("POST", r"/api/contests/(\d+)/q/(\d+)/run", r_run),
@@ -254,6 +278,11 @@ def main():
     DATA.mkdir(parents=True, exist_ok=True)
     with db() as con:
         con.executescript(SCHEMA)
+        columns = {row["name"] for row in con.execute("pragma table_info(contests)")}
+        if "paused_at" not in columns:
+            con.execute("alter table contests add column paused_at real")
+        if "paused_total" not in columns:
+            con.execute("alter table contests add column paused_total real not null default 0")
     port = int(os.environ.get("PORT", 8000))
     print(f"jayforces on http://localhost:{port}  ({len(load_all(QDIR))} questions, data in {DATA})")
     ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()

@@ -74,6 +74,7 @@ button { font: inherit; cursor: pointer; }
 .clock { font: 600 16px var(--mono); font-variant-numeric: tabular-nums; color: var(--soft); min-width: 74px; text-align: right; }
 .clock.low { color: var(--yellow); }
 .clock.out { color: var(--red); }
+.clock.paused { color: var(--cyan); }
 
 .primary, .ghost {
   border-radius: 6px;
@@ -93,6 +94,7 @@ kbd { font: 11px var(--mono); opacity: 0.7; margin-left: 6px; }
 .fuel div { height: 100%; width: 0; background: var(--blue); transition: width 1s linear, background-color 0.6s; }
 .fuel div.low { background: var(--yellow); }
 .fuel div.out { background: var(--red); }
+.fuel div.paused { background: var(--cyan); transition: none; }
 
 /* ---------- panes ---------- */
 .split {

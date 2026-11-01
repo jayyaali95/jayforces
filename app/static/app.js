@@ -160,8 +160,13 @@ function renderLaps() {
       <span class="pct">${q.open ? `${pct(q.best)}%` : LOCK}</span>
     </button>`).join("");
   const active = !!S.contest?.active;
+  const paused = !!S.contest?.paused_at;
   $("#new-btn").hidden = !S.contest; // the home screen has its own big button
   $("#end-btn").hidden = !active;
+  $("#pause-btn").hidden = !active;
+  $("#pause-btn").textContent = paused ? "Resume" : "Pause";
+  $("#pause-btn").setAttribute("aria-label", paused ? "Resume contest timer" : "Pause contest timer");
+  $("#pause-btn").setAttribute("aria-pressed", String(paused));
   $("#clock").hidden = !active;
 }
 
@@ -176,16 +181,17 @@ function tick() {
     bar.style.width = "0";
     return;
   }
-  const now = Date.now() / 1000 + S.skew;
+  const paused = !!c.paused_at;
+  const now = paused ? c.paused_at : Date.now() / 1000 + S.skew;
   const left = Math.max(0, c.ends_at - now);
-  const share = left / (c.ends_at - c.started_at);
+  const share = left / c.duration;
   const low = left < 15 * 60, out = left < 5 * 60;
   const h = Math.floor(left / 3600), m = Math.floor(left / 60) % 60, s = Math.floor(left) % 60;
   clock.textContent = `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  clock.className = `clock ${out ? "out" : low ? "low" : ""}`;
+  clock.className = `clock ${paused ? "paused" : out ? "out" : low ? "low" : ""}`;
   bar.style.width = `${share * 100}%`;
-  bar.className = out ? "out" : low ? "low" : "";
-  if (left <= 0) timeUp();
+  bar.className = paused ? "paused" : out ? "out" : low ? "low" : "";
+  if (left <= 0 && !paused) timeUp();
 }
 
 async function timeUp() {
@@ -366,6 +372,23 @@ async function endContest() {
   summary(c, "Contest ended", home);
 }
 
+async function togglePause() {
+  if (!S.contest?.active) return;
+  const btn = $("#pause-btn");
+  btn.disabled = true;
+  try {
+    const action = S.contest.paused_at ? "resume" : "pause";
+    S.contest = await api("POST", `/api/contests/${S.contest.id}/${action}`);
+    S.skew = S.contest.now - Date.now() / 1000;
+    renderLaps();
+    tick();
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function resetCode() {
   if (!S.q || !confirm("Replace your code with the starter code? This can't be undone.")) return;
   S.editor.setValue(S.q.starter);
@@ -374,6 +397,7 @@ function resetCode() {
 $("#run-btn").addEventListener("click", run);
 $("#reset-btn").addEventListener("click", resetCode);
 $("#end-btn").addEventListener("click", endContest);
+$("#pause-btn").addEventListener("click", togglePause);
 $("#new-btn").addEventListener("click", newContest);
 document.addEventListener("click", (e) => { if (e.target.closest("[data-new]")) newContest(); });
 document.addEventListener("keydown", (e) => {
