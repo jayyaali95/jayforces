@@ -132,6 +132,8 @@ kbd { font: 11px var(--mono); opacity: 0.7; margin-left: 6px; }
 .tag.hard { color: var(--red); }
 .tag.coding { color: var(--blue); }
 .tag.ml { color: var(--magenta); }
+.tag.ds { color: var(--cyan); }
+iframe.editor { border: 0; width: 100%; padding: 0; background: #fff; }
 .md { max-width: 72ch; color: var(--soft); }
 .md h2 { font-size: 17px; color: var(--text); margin: 30px 0 8px; font-weight: 600; }
 .md p, .md li { margin: 0 0 10px; }

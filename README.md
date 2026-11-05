@@ -30,18 +30,40 @@ Delete `data/jayforces.db` to start fresh.
 
 ## The question bank
 
-60 questions so far, 30 coding and 30 ML, each with at least 15 tests:
+70 questions so far, 30 coding, 30 ML and 10 notebook questions, each with at least 15 tests:
 
-|        | easy | medium | hard |
-|--------|-----:|-------:|-----:|
-| coding |   10 |     12 |    8 |
-| ml     |   10 |     12 |    8 |
+|          | easy | medium | hard |
+|----------|-----:|-------:|-----:|
+| coding   |   10 |     12 |    8 |
+| ml       |   10 |     12 |    8 |
+| notebook |    3 |      4 |    3 |
 
 Coding covers things like event streams and state machines, rate limiters, caches,
 time-versioned stores, decorators, parsing messy CSVs and logs, shortest paths and simulations.
 ML covers metrics, preprocessing, KNN, linear and logistic regression, PCA, naive Bayes, trees,
 k-means, DBSCAN, HMMs, optimizers, hand-written backprop, a mini autograd, and a few PyTorch
 questions (training loops, datasets and padding, multi-head attention).
+
+## Notebook questions
+
+Ten data science tasks (housing prices, card fraud, cart conversion, loan default, telecom churn, delivery ETA,
+hospital readmission, auto claim cost, flight delays, ad clicks) live in `questions/ds/`. When one comes up in a contest,
+the Monaco editor is replaced by JupyterLab (embedded from port 8888) with a notebook and a freshly generated random dataset
+(`train.csv` with the target, `test.csv` with hidden labels). The same contest timer keeps running; you run cells as usual.
+
+- Each dataset has 14 to 15 features, 6 to 8 categorical and the rest numeric or boolean. It is deliberately messy: numbers
+  stored as text (`$1,234.50`, `1,200 sqft`, `45.3%`), booleans as `Y`/`yes`/`1`, labels with random case and spacing, several
+  spellings of missing (`NaN`, `?`, `--`, `unknown`) and fake values like `-1` or `9999`.
+- You define `clean(df)` (Part 1, checked cell by cell against the ground truth) and `fit_predict(train, test)` (Parts 2 and 3,
+  scored on the hidden labels, plus robustness checks). **Run tests** reads the saved notebook (autosave is 5 s, `Ctrl+S` saves
+  now) and runs it top to bottom like *Restart and run all*, so keep slow exploration cells out of it.
+- The image has pandas, numpy, scikit-learn, LightGBM, XGBoost, scipy, matplotlib and seaborn.
+- Each attempt gets its own folder in `data/notebooks/c<contest>_q<n>/`, so you can open it later. Without JupyterLab
+  installed the server skips notebook questions.
+
+To add one, create `questions/ds/<slug>/` with `question.md` (`kind: notebook`, `category: ds`), `data.py` (a `make(rng, n)` that
+returns the clean data plus `KINDS`, `SENTINEL`, `MISSING`, `SCORES`, see `app/dsgen.py`), `solution.py` (reference `clean` and
+`fit_predict`) and a two line `tests.py` (`from dscheck import suite; suite(globals())`). Then run `check_bank.py` on it.
 
 ## Adding a question
 
@@ -121,6 +143,9 @@ app/
   runner.py       runs one question's tests in a subprocess, one timeout per test
   check.py        assertion helpers for tests
   check_bank.py   validates questions
+  notebooks.py    notebook questions: notebook file, JupyterLab, grading a saved notebook
+  dsgen.py        random messy datasets for notebook questions
+  dscheck.py      shared tests for notebook questions
   static/         the page: index.html, app.js, style.css, vendored marked.js
 questions/        the bank
 data/             sqlite lives here (git ignored)
@@ -133,4 +158,6 @@ data/             sqlite lives here (git ignored)
 - Your code runs as a subprocess inside the container with no extra sandboxing. That's fine for
   practicing on your own machine; don't expose this to the internet.
 - `CONTEST_MINUTES` in `docker-compose.yml` changes the contest length.
-- Running without Docker works too if you have numpy and torch: `python app/server.py`.
+- Running without Docker works too if you have numpy and torch (plus pandas, scikit-learn, lightgbm and jupyterlab for
+  the notebook questions): `python app/server.py`.
+- JupyterLab runs without a token on port 8888 (`JUPYTER_PORT` changes it). Like the code runner, don't expose it.

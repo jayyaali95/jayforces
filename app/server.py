@@ -2,6 +2,7 @@
 
     python app/server.py        -> http://localhost:8000
 """
+import atexit
 import json
 import mimetypes
 import os
@@ -16,6 +17,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import notebooks
 from questions import load_all
 
 HERE = Path(__file__).resolve().parent
@@ -23,6 +25,8 @@ QDIR = Path(os.environ.get("QUESTIONS_DIR", HERE.parent / "questions"))
 DATA = Path(os.environ.get("DATA_DIR", HERE.parent / "data"))
 MINUTES = int(os.environ.get("CONTEST_MINUTES", 90))
 LINEUP = ["easy", "medium", "medium", "hard"]
+JUPYTER_PORT = int(os.environ.get("JUPYTER_PORT", 8888))
+JUPYTER = {"port": None}  # set in main() once JupyterLab is running; notebook questions need it
 
 SCHEMA = """
 create table if not exists contests (
@@ -55,7 +59,8 @@ def pick_lineup(con, bank):
     for _ in range(30):  # a few shuffles to get both coding and ML in the mix
         chosen = []
         for level in LINEUP:
-            pool = [q for q in bank.values() if q.difficulty == level and q.slug not in chosen]
+            pool = [q for q in bank.values() if q.difficulty == level and q.slug not in chosen
+                    and (JUPYTER["port"] or not q.notebook)]
             if not pool:
                 raise ApiError(400, f"Need more {level} questions in {QDIR} to build a contest.")
             fewest = min(seen.get(q.slug, 0) for q in pool)
@@ -103,14 +108,32 @@ def attempt(con, cid, idx, bank, need_open=True):
     return v, a, q
 
 
-def run_tests(q, code, part):
+def nb_seed(cid, idx):
+    return cid * 10 + idx
+
+
+def nb_dir(cid, idx):
+    return DATA / "notebooks" / f"c{cid}_q{idx}"
+
+
+def run_tests(q, code, part, data_dir=None, seed=7):
+    """data_dir: where a notebook question's train.csv / test.csv live (made on the fly if omitted)."""
+    limit = 300 if q.notebook else 120
     with tempfile.TemporaryDirectory() as tmp:
         Path(tmp, "solution.py").write_text(code)
+        env = {**os.environ, "MPLBACKEND": "Agg"}
+        if q.notebook:
+            if data_dir is None:
+                data_dir = Path(tmp, "data")
+                notebooks.make_data(q.dir, seed, data_dir)
+            for name in ("train.csv", "test.csv"):
+                shutil.copy(Path(data_dir, name), Path(tmp, name))
+            env["JF_SEED"] = str(seed)
         try:
             p = subprocess.run([sys.executable, str(HERE / "runner.py"), str(q.tests), str(part), str(q.timeout)],
-                               cwd=tmp, capture_output=True, text=True, timeout=120)
+                               cwd=tmp, capture_output=True, text=True, timeout=limit, env=env)
         except subprocess.TimeoutExpired:
-            return {"error": "The whole run took over 120s and was stopped.", "tests": [], "stdout": ""}
+            return {"error": f"The whole run took over {limit}s and was stopped.", "tests": [], "stdout": ""}
     line = next((ln for ln in reversed(p.stdout.splitlines()) if ln.startswith("RESULT:")), None)
     if not line:
         return {"error": (p.stderr or "Runner crashed without output.")[-2000:], "tests": [], "stdout": p.stdout[-2000:]}
@@ -126,7 +149,8 @@ def r_state(con, bank, body):
     for q in bank.values():
         counts.setdefault(q.category, {}).setdefault(q.difficulty, 0)
         counts[q.category][q.difficulty] += 1
-    return {"contest": view(con, row["id"], bank) if row else None, "bank": counts, "minutes": MINUTES}
+    return {"contest": view(con, row["id"], bank) if row else None, "bank": counts, "minutes": MINUTES,
+            "jupyter": JUPYTER["port"]}
 
 
 def r_new(con, bank, body):
@@ -170,8 +194,16 @@ def r_question(con, bank, body, cid, idx):
     v, a, q = attempt(con, int(cid), int(idx), bank)
     shown = q.parts[:a["part"]]
     locked = [re.sub(r"^## ", "", p.splitlines()[0]) for p in q.parts[a["part"]:]]
+    url = None
+    if q.notebook:
+        d = nb_dir(int(cid), int(idx))
+        try:
+            notebooks.ensure(q, d, nb_seed(int(cid), int(idx)))
+        except Exception as e:
+            raise ApiError(500, str(e))
+        url = f"/doc/tree/{d.name}/notebook.ipynb"
     return {**v["questions"][int(idx)], "intro": q.intro, "sections": shown, "locked": locked,
-            "code": a["code"], "starter": q.starter}
+            "code": a["code"], "starter": q.starter, "notebook": url}
 
 
 def r_save(con, bank, body, cid, idx):
@@ -189,7 +221,15 @@ def r_run(con, bank, body, cid, idx):
     if not v["active"]:
         raise ApiError(409, "This contest is over. Generate a new one to keep going.")
     code = body.get("code", "")
-    res = run_tests(q, code, a["part"])
+    if q.notebook:  # the notebook on disk is the source of truth, not the editor
+        d = nb_dir(cid, idx)
+        try:
+            code, res = a["code"], run_tests(q, notebooks.grading_code(notebooks.ensure(q, d, nb_seed(cid, idx))),
+                                              a["part"], d, nb_seed(cid, idx))
+        except Exception as e:
+            raise ApiError(500, str(e))
+    else:
+        res = run_tests(q, code, a["part"])
     tests = res["tests"]
     ran = [t for t in tests if t["ok"] is not None]
     passed = sum(1 for t in ran if t["ok"])
@@ -274,8 +314,28 @@ class Handler(BaseHTTPRequestHandler):
             sys.stderr.write(f"{self.command} {self.path} {args[1] if len(args) > 1 else ''}\n")
 
 
+def start_jupyter():
+    """JupyterLab for the notebook questions, embedded by the page. Skipped if it isn't installed."""
+    if not notebooks.available():
+        print("jupyterlab not installed: notebook questions are left out of contests")
+        return
+    root = DATA / "notebooks"
+    prefs = DATA / "jupyter-settings" / "@jupyterlab" / "docmanager-extension"
+    prefs.mkdir(parents=True, exist_ok=True)
+    root.mkdir(parents=True, exist_ok=True)
+    (prefs / "plugin.jupyterlab-settings").write_text('{"autosave": true, "autosaveInterval": 5}')  # run-tests reads the saved file
+    cmd = [sys.executable, "-m", "jupyterlab", "--no-browser", "--allow-root", "--ip=0.0.0.0", f"--port={JUPYTER_PORT}",
+           f"--ServerApp.root_dir={root}", "--IdentityProvider.token=", "--ServerApp.password=",
+           "--ServerApp.tornado_settings={'headers': {'Content-Security-Policy': 'frame-ancestors *'}}"]  # allow our iframe
+    proc = subprocess.Popen(cmd, cwd=root, env={**os.environ, "JUPYTERLAB_SETTINGS_DIR": str(DATA / "jupyter-settings")},
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    atexit.register(proc.terminate)
+    JUPYTER["port"] = JUPYTER_PORT
+
+
 def main():
     DATA.mkdir(parents=True, exist_ok=True)
+    start_jupyter()
     with db() as con:
         con.executescript(SCHEMA)
         columns = {row["name"] for row in con.execute("pragma table_info(contests)")}

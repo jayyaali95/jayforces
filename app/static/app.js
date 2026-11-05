@@ -198,6 +198,7 @@ async function timeUp() {
   const id = S.contest.id;
   S.contest = { ...S.contest, active: false };
   S.editor.updateOptions({ readOnly: true });
+  $("#nb").removeAttribute("src");
   await flushSave();
   const done = (await api("GET", "/api/history")).find((c) => c.id === id);
   summary(done || S.contest, "Time's up", home);
@@ -214,6 +215,7 @@ function showWork(on) {
 async function home() {
   S.q = null;
   S.contest = null;
+  $("#nb").removeAttribute("src");
   renderLaps();
   showWork(false);
   const [state, history] = await Promise.all([api("GET", "/api/state"), api("GET", "/api/history")]);
@@ -229,10 +231,11 @@ async function home() {
   $("#left").innerHTML = `
     <h1 class="hero">Four problems. Ninety minutes. Write it like it ships.</h1>
     <p class="lede">Each problem grows in parts, the way real requirements do: get a part fully green and the next one
-      unlocks. The mix covers practical Python, algorithms, and ML written from scratch with numpy and PyTorch.</p>
+      unlocks. The mix covers practical Python, algorithms, and ML written from scratch with numpy and PyTorch, plus messy-data notebooks you work on in Jupyter.</p>
     <div class="bank">
       <div><b>${count("coding")}</b>coding questions</div>
       <div><b>${count("ml")}</b>ML questions</div>
+      <div><b>${count("ds")}</b>notebook questions</div>
       <div><b>${history.length}</b>contests finished</div>
     </div>
     <div class="history">
@@ -260,9 +263,22 @@ async function openQuestion(i) {
   renderStatement(q);
   setCode(q.code);
   S.editor.updateOptions({ readOnly: !S.contest.active });
+  showNotebook(q);
   renderResults(S.results[i]);
   renderLaps();
   if (innerWidth > 860) S.editor.focus(); // on phones focus would jump past the statement
+}
+
+// Notebook questions swap the editor for JupyterLab (served on its own port) inside an iframe.
+function showNotebook(q) {
+  const nb = $("#nb"), port = S.state?.jupyter;
+  $("#editor").hidden = !!q.notebook;
+  nb.hidden = !q.notebook;
+  $("#reset-btn").hidden = !!q.notebook;
+  if (!q.notebook) return;
+  if (!port) return toast("JupyterLab is not running, so this notebook can't open.");
+  const url = `${location.protocol}//${location.hostname}:${port}${q.notebook}`;
+  if (nb.getAttribute("src") !== url) nb.src = url;
 }
 
 function renderStatement(q, scrollToNew = false) {
@@ -271,7 +287,7 @@ function renderStatement(q, scrollToNew = false) {
     <h1 class="title">${esc(q.title)}</h1>
     <div class="tags">
       <span class="tag ${q.difficulty}">${q.difficulty[0].toUpperCase() + q.difficulty.slice(1)}</span>
-      <span class="tag ${q.category}">${q.category === "ml" ? "ML" : "Coding"}</span>
+      <span class="tag ${q.category}">${{ ml: "ML", ds: "Notebook" }[q.category] || "Coding"}</span>
       ${q.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}
     </div>
     <div class="md">${marked.parse(md)}</div>
@@ -289,7 +305,9 @@ function renderResults(r) {
   const box = $("#results");
   if (!r) {
     $("#score").textContent = "Run the tests to see how you're doing.";
-    box.innerHTML = `<p class="group">Tests run for every part you've unlocked. Your code saves as you type.</p>`;
+    box.innerHTML = S.q?.notebook
+      ? `<p class="group">Tests run your saved notebook top to bottom (it autosaves every few seconds, Ctrl+S saves now) for every part you've unlocked.</p>`
+      : `<p class="group">Tests run for every part you've unlocked. Your code saves as you type.</p>`;
     return;
   }
   const full = r.pct >= 100;

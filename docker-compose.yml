@@ -3,6 +3,7 @@ services:
     build: .
     ports:
       - "8000:8000"
+      - "8888:8888"   # JupyterLab for the notebook questions, embedded in the page
     volumes:
       - ./data:/jayforces/data            # sqlite history lives here, survives rebuilds
       - ./questions:/jayforces/questions  # edit or add questions without rebuilding

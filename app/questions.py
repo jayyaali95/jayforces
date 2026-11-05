@@ -1,7 +1,7 @@
 """Loads the question bank from disk.
 
 A question is a folder with:
-    question.md   front matter + statement, split into "## Part N" sections
+    question.md   front matter + statement, split into "## Part N" sections (`kind: notebook` for notebook questions)
     solution.py   reference solution (the starter code is derived from it)
     tests.py      tests named test_p<part>_<name>(sol)
     starter.py    optional, overrides the derived starter
@@ -80,6 +80,7 @@ class Question:
         self.category = meta.get("category", "coding").lower()
         self.tags = [t.strip() for t in meta.get("tags", "").split(",") if t.strip()]
         self.timeout = float(meta.get("timeout", 3))
+        self.notebook = meta.get("kind", "") == "notebook"  # graded from a Jupyter notebook, see notebooks.py
         self.tests = folder / "tests.py"
 
     @property
